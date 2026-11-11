@@ -1,98 +1,115 @@
 /**
- * Pi Language Model Provider Extension
- * Entry point with activate/deactivate lifecycle
+ * Pi Language Model Provider
+ * Fork of tintinweb/vscode-pi-model-chat-provider (MIT).
+ * Native VS Code language model provider backed by the Pi CLI. Not a webview
+ * and not a chat participant.
  */
 
 import * as vscode from 'vscode';
-import { SessionPool } from './session-pool.js';
+import { getOutputChannel } from './debug.js';
 import { PiChatProvider } from './provider.js';
+import { SessionPool, type PoolEnvironment } from './session-pool.js';
 import type { PiConfig } from './types.js';
-import { debug, getOutputChannel } from './debug.js';
+import { createVsCodeUi } from './vscode-ui.js';
 
 let pool: SessionPool | undefined;
 
-/**
- * Extension activation
- */
 export function activate(context: vscode.ExtensionContext): void {
-    debug('Pi Language Model Provider extension activating...');
+    const channel = getOutputChannel();
+    channel.appendLine(
+        'Pi language model provider — fork of tintinweb/vscode-pi-model-chat-provider (MIT), ' +
+        'repository wuwuzhazha/vscode-pi-model-chat-provider. ' +
+        'Host tool calling is disabled. Pi tools run inside Pi and are shown as text.'
+    );
+    context.subscriptions.push(channel);
 
-    // Shared "Pi Agent" output channel — disposed with the extension.
-    context.subscriptions.push(getOutputChannel());
+    const environment = createEnvironment();
+    const ui = createVsCodeUi();
+    const logger = {
+        info: (message: string) => getOutputChannel().appendLine(message),
+        debug: (message: string) => {
+            if (vscode.workspace.getConfiguration('pi').get<boolean>('debug', false)) {
+                getOutputChannel().appendLine(`[debug] ${message}`);
+            }
+        },
+    };
+    let provider: PiChatProvider;
+    const replacePool = () => {
+        const previous = pool;
+        pool = new SessionPool(loadConfiguration(), environment, ui, logger);
+        provider.setPool(pool);
+        void previous?.dispose();
+    };
 
-    // Load configuration
-    const config = loadConfiguration();
-    const maxSessions = vscode.workspace.getConfiguration('pi').get<number>('maxSessions', 20);
-    const sessionIdleTimeout = vscode.workspace.getConfiguration('pi').get<number>('sessionIdleTimeout', 600);
+    pool = new SessionPool(loadConfiguration(), environment, ui, logger);
+    provider = new PiChatProvider(pool);
 
-    // Create session pool
-    pool = new SessionPool(config, maxSessions, sessionIdleTimeout * 1000);
-
-    // Create provider
-    const provider = new PiChatProvider(pool);
-
-    // Register language model chat provider
     context.subscriptions.push(
         vscode.lm.registerLanguageModelChatProvider('pi', provider)
     );
 
-    // Watch for configuration changes
     context.subscriptions.push(
-        vscode.workspace.onDidChangeConfiguration(async (e) => {
-            if (e.affectsConfiguration('pi')) {
-                const newConfig = loadConfiguration();
-                const newMaxSessions = vscode.workspace.getConfiguration('pi').get<number>('maxSessions', 20);
-                const newIdleTimeout = vscode.workspace.getConfiguration('pi').get<number>('sessionIdleTimeout', 600);
-                
-                // Dispose old pool and create new one
-                if (pool) {
-                    await pool.dispose();
-                }
-                pool = new SessionPool(newConfig, newMaxSessions, newIdleTimeout * 1000);
-                
-                vscode.window.showInformationMessage(
-                    'Pi configuration updated. New sessions will use updated settings.'
-                );
+        vscode.workspace.onDidChangeConfiguration((event) => {
+            if (!event.affectsConfiguration('pi')) {
+                return;
             }
+            replacePool();
+            void vscode.window.showInformationMessage(
+                'Pi configuration updated. New requests use the updated settings. In-memory Pi sessions were stopped.'
+            );
         })
     );
 
-    // Add pool to subscriptions for cleanup
-    // Note: subscriptions don't await async, so we rely on deactivate() for proper cleanup
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeWorkspaceFolders(() => {
+            replacePool();
+        })
+    );
+
     context.subscriptions.push({
         dispose: () => {
-            // Fire-and-forget cleanup as fallback
-            pool?.dispose().catch(console.error);
-        }
+            void pool?.dispose();
+        },
     });
-
-    debug('Pi Language Model Provider extension activated');
 }
 
-/**
- * Extension deactivation
- */
 export async function deactivate(): Promise<void> {
-    debug('Pi Language Model Provider extension deactivating...');
-    
     if (pool) {
         await pool.dispose();
+        pool = undefined;
     }
-    
-    debug('Pi Language Model Provider extension deactivated');
 }
 
-/**
- * Load configuration from VS Code settings
- */
-function loadConfiguration(): PiConfig {
-    const config = vscode.workspace.getConfiguration('pi');
+function createEnvironment(): PoolEnvironment {
+    return {
+        isTrusted: () => vscode.workspace.isTrusted,
+        workspaceFolders: () => vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath) ?? [],
+    };
+}
 
+export function loadConfiguration(): PiConfig {
+    const config = vscode.workspace.getConfiguration('pi');
+    const idleSeconds = numberSetting(config.get<number>('sessionIdleTimeout'), 600, 0);
     return {
         binaryPath: config.get<string>('binaryPath') || 'pi',
         workingDirectory: config.get<string>('workingDirectory') || '',
         autoRestart: config.get<boolean>('autoRestart') ?? true,
-        maxRestartAttempts: config.get<number>('maxRestartAttempts') ?? 3,
+        maxRestartAttempts: numberSetting(config.get<number>('maxRestartAttempts'), 3, 0),
         additionalArgs: config.get<string[]>('additionalArgs') || [],
+        commandTimeoutMs: numberSetting(config.get<number>('commandTimeoutMs'), 30_000, 200),
+        hungRequestTimeoutMs: numberSetting(config.get<number>('hungRequestTimeoutMs'), 0, 0),
+        shutdownGraceMs: numberSetting(config.get<number>('shutdownGraceMs'), 5_000, 200),
+        persistSessions: config.get<boolean>('persistSessions') ?? false,
+        sessionDirectory: config.get<string>('sessionDirectory') || '',
+        maxSessions: numberSetting(config.get<number>('maxSessions'), 20, 1),
+        sessionIdleTimeoutMs: idleSeconds === 0 ? 0 : idleSeconds * 1000,
+        debug: config.get<boolean>('debug') ?? false,
     };
+}
+
+function numberSetting(value: number | undefined, fallback: number, min: number): number {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+        return fallback;
+    }
+    return Math.max(min, Math.floor(value));
 }

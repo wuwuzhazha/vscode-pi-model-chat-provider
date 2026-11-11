@@ -1,8 +1,8 @@
 {
   "name": "vscode-pi-model-chat-provider",
   "displayName": "Pi Coding Agent - Language Model Provider",
-  "description": "Use Pi Coding Agent directly from Copilot Chat via VS Code's Language Model Provider API",
-  "version": "0.2.1",
+  "description": "Fork of tintinweb's extension. Use a user-installed Pi CLI from VS Code chat via the native Language Model Provider API. Not published from this repository.",
+  "version": "0.3.0",
   "publisher": "tintinweb",
   "preview": true,
   "icon": "images/pi-logo-black.png",
@@ -12,19 +12,19 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/tintinweb/vscode-pi-model-chat-provider.git"
+    "url": "https://github.com/wuwuzhazha/vscode-pi-model-chat-provider.git"
   },
   "bugs": {
-    "url": "https://github.com/tintinweb/vscode-pi-model-chat-provider/issues"
+    "url": "https://github.com/wuwuzhazha/vscode-pi-model-chat-provider/issues"
   },
-  "homepage": "https://github.com/tintinweb/vscode-pi-model-chat-provider#readme",
+  "homepage": "https://github.com/wuwuzhazha/vscode-pi-model-chat-provider#readme",
   "galleryBanner": {
     "color": "#1e1e1e",
     "theme": "dark"
   },
   "type": "module",
   "engines": {
-    "vscode": "^1.103.0"
+    "vscode": "^1.109.0"
   },
   "categories": [
     "AI",
@@ -91,12 +91,52 @@
             "type": "string"
           },
           "default": [],
-          "description": "Additional command-line arguments to pass to Pi CLI"
+          "description": "Extra arguments appended after --mode rpc. --mode, --session, --session-dir, --no-session, --resume, --continue, --fork, and -s are rejected so RPC mode and session storage stay under the settings below."
         },
         "pi.debug": {
           "type": "boolean",
           "default": false,
-          "description": "Enable debug logging for Pi extension"
+          "description": "Enable debug logging for the Pi extension. Debug logs include RPC payloads and can contain prompts and tool output."
+        },
+        "pi.commandTimeoutMs": {
+          "type": "number",
+          "default": 30000,
+          "minimum": 200,
+          "description": "How long to wait for Pi to accept one RPC command such as set_model or get_state. This does not limit how long a prompt may run."
+        },
+        "pi.hungRequestTimeoutMs": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Inactivity timeout for a running prompt, in milliseconds. 0 disables it. Any Pi protocol output resets the timer, so a long task that keeps streaming is not stopped. Open Pi dialogs also pause it."
+        },
+        "pi.shutdownGraceMs": {
+          "type": "number",
+          "default": 5000,
+          "minimum": 200,
+          "description": "How long to wait for Pi to exit after cancellation, a hung prompt, or shutdown before the process is killed."
+        },
+        "pi.persistSessions": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Off by default. Pi is started with `--no-session` and the transcript stays in memory. When on, session JSONL is written only under a folder inside the trusted workspace (see `pi.sessionDirectory`). Those files contain prompts, tool output, and file contents Pi reads. They are not encrypted."
+        },
+        "pi.sessionDirectory": {
+          "type": "string",
+          "default": "",
+          "description": "Directory for opt-in Pi session files. Empty uses <workspace>/.pi/vscode-lm-sessions. Paths outside the workspace are rejected. Ignored when pi.persistSessions is false."
+        },
+        "pi.maxSessions": {
+          "type": "number",
+          "default": 20,
+          "minimum": 1,
+          "description": "Soft cap on idle in-memory Pi processes. A busy process is not killed to make room."
+        },
+        "pi.sessionIdleTimeout": {
+          "type": "number",
+          "default": 600,
+          "minimum": 0,
+          "description": "Seconds before an idle in-memory Pi process is stopped. 0 leaves idle processes up until shutdown."
         }
       }
     }
@@ -105,19 +145,18 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "lint": "eslint src --ext ts",
+    "typecheck": "tsc -p ./ --noEmit && tsc -p ./tsconfig.test.json --noEmit",
+    "lint": "eslint src test",
+    "test": "tsc -p ./tsconfig.test.json && node --test --test-timeout 20000 out-test/test/*.test.js",
     "package": "vsce package",
-    "publish": "vsce publish"
-  },
-  "dependencies": {
-    "@earendil-works/pi-agent-core": "^0.74.0",
-    "@earendil-works/pi-coding-agent": "^0.74.0"
+    "publish": "node scripts/refuse-publish.js"
   },
   "devDependencies": {
     "@types/node": "^20.x",
-    "@types/vscode": "^1.103.0",
+    "@types/vscode": "1.109.0",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
+    "@vscode/vsce": "^3.6.0",
     "eslint": "^8.57.0",
     "typescript": "^5.3.0"
   }

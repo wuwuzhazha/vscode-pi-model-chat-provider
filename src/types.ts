@@ -1,40 +1,36 @@
 /**
- * Shared types for Pi Language Model Provider extension
+ * Shared configuration for the Pi language model provider.
+ * Original types by tintinweb; extended for this fork.
  */
 
-import type { CancellationToken } from 'vscode';
-import type { AgentEvent } from '@earendil-works/pi-agent-core';
-
-/**
- * Configuration for Pi agent
- */
 export interface PiConfig {
     binaryPath: string;
+    /** Explicit working directory. Empty means the first workspace folder. */
     workingDirectory: string;
     autoRestart: boolean;
     maxRestartAttempts: number;
     additionalArgs: string[];
+    /** Timeout for a single RPC command acceptance, in milliseconds. */
+    commandTimeoutMs: number;
+    /**
+     * Inactivity timeout for a running prompt, in milliseconds.
+     * 0 disables it. Streaming output resets the timer, so a long task is not
+     * cut off just because it exceeds a fixed wall-clock cap.
+     */
+    hungRequestTimeoutMs: number;
+    /** How long to wait for Pi to exit after stdin is closed and SIGTERM. */
+    shutdownGraceMs: number;
+    /** When false, Pi is started with --no-session and transcripts stay in memory. */
+    persistSessions: boolean;
+    /** Empty uses <workspace>/.pi/vscode-lm-sessions when persistence is on. */
+    sessionDirectory: string;
+    maxSessions: number;
+    /** Idle session lifetime, in milliseconds. */
+    sessionIdleTimeoutMs: number;
+    debug: boolean;
 }
 
-/**
- * Model identifier parsed from VS Code model ID
- */
-export interface ParsedModelId {
-    provider: string;
-    modelId: string;
-}
-
-/**
- * Event handler for Pi RPC events
- */
-export type PiEventHandler = (event: AgentEvent) => void;
-
-/**
- * Options for sending a prompt to Pi
- */
-export interface SendPromptOptions {
-    prompt: string;
-    model: ParsedModelId;
-    onEvent: PiEventHandler;
-    token: CancellationToken;
+export interface ResolvedPiConfig extends PiConfig {
+    cwd: string;
+    sessionDir?: string;
 }

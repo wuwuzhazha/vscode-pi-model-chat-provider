@@ -2,6 +2,33 @@
 
 All notable changes to the "vscode-pi-model-chat-provider" extension will be documented in this file.
 
+This line and the entries below 0.3.0 describe the original tintinweb extension. 0.3.0 is the first release of the [wuwuzhazha fork](https://github.com/wuwuzhazha/vscode-pi-model-chat-provider). The license remains MIT. Copyright for the original work remains tintinweb.
+
+## [0.3.0] - 2026-11-11
+
+### Added
+- Version and capability check of the user-installed `pi` binary. Missing binaries and versions older than 0.74.0 fail with an install hint. Pi 0.80.4+ is waited on `agent_settled`. Pi 0.74.0–0.80.3 still finishes on the first `agent_end`, and that limitation is logged.
+- Strict LF JSONL framing. Records are split on `\n` only, so `U+2028` and `U+2029` inside JSON strings stay inside the record.
+- Request/response correlation by id, including `success: false`. Command acceptance uses `pi.commandTimeoutMs`. Prompt runs have no fixed 2 minute cap. `pi.hungRequestTimeoutMs` (default 0, disabled) aborts a prompt only after that long with no protocol output. Open Pi dialogs pause the timer.
+- Cancellation sends `clear_queue` on Pi 0.84.4+ and then `abort`, cancels open dialogs, and kills the process if it does not settle within `pi.shutdownGraceMs`.
+- Native Pi extension UI: confirm (Allow / Deny / dismiss), select (Quick Pick), input (Input Box), and editor (untitled document). Dismissing or closing cancels. That is not the same as Deny. Notifications, status, widgets, title, and editor-prefill are shown or logged instead of being ignored.
+- Workspace Trust gate. An untrusted workspace does not spawn Pi.
+- Opt-in `pi.persistSessions`. Session files and the provider index stay inside the workspace. The default remains `--no-session`.
+- Session identity includes the transcript, model, and working directory. Concurrent prompts for one transcript run FIFO. Edits, cancellation, and crashes start a new process and replay the transcript, with explicit limitation lines for images, host tool results, and unsupported parts.
+- Unit and integration tests against a mock Pi subprocess, plus GitHub Actions CI.
+
+### Changed
+- The extension no longer depends on `@earendil-works/pi-coding-agent` or `@earendil-works/pi-agent-core`. Those packages are not the user's Pi runtime. `RpcClient` is a real root export of 0.74.0, but that client still completes on `agent_end`. Current Pi also exports `RpcClient` and requires Node.js >= 22.19. This fork speaks JSONL to the `pi` on PATH instead.
+- `capabilities.toolCalling` is false. Host `toolMode: Required` fails with an explanation. Other host tool lists produce one notice and no `LanguageModelToolCallPart`. Pi tool activity stays fenced text. VS Code tool approvals do not cover Pi tools, and Pi Allow/Deny does not cover VS Code tools.
+- Model picker copy no longer claims this is a VS Code agent-tool model.
+- Configuration reload replaces the provider's session pool. Previously the provider kept using the disposed pool.
+- Repository links in this fork point at `wuwuzhazha/vscode-pi-model-chat-provider`. The Marketplace publisher id is still `tintinweb` so a local VSIX can replace that extension id. `npm run publish` refuses to publish.
+- `engines.vscode` is `^1.109.0` so it matches `@types/vscode` 1.109.0. Upstream said `^1.103.0`, but those published typings do not include `LanguageModelChatProvider`, and `vsce` will not pack when the installed types are newer than the engine.
+- Without a workspace folder, Pi does not fall back to the extension host's current directory. Set `pi.workingDirectory` or open a folder.
+
+### Security
+- `pi.additionalArgs` cannot pass `--mode`, `--session`, `--session-dir`, `--no-session`, `--resume`, `--continue`, `--fork`, or `-s`.
+
 ## [0.2.1] - 2026-07-23
 
 ### Fixed
