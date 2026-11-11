@@ -40,7 +40,8 @@ test('earlier images and host tool results are not dropped silently', () => {
     assert.match(prepared.text, /earlier image image\/jpeg/);
     assert.match(prepared.text, /file contents/);
     assert.match(prepared.text, /application\/pdf/);
-    assert.match(prepared.limitations.join('\n'), /flattened to text/);
+    assert.match(prepared.limitations.join('\n'), /forwarded as text/);
+    assert.match(prepared.text, /do not run it again/);
     assert.match(prepared.text, /restored this chat/);
 });
 

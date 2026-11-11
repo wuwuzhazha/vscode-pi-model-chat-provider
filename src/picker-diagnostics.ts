@@ -115,7 +115,7 @@ export function formatPickerDiagnostics(input: PickerDiagnosticInput): string {
     write('Pi model picker diagnostics');
     write(`generatedAt: ${input.generatedAt}`);
     write('This report does not include prompt text, API keys, environment variables, or pi.additionalArgs values.');
-    write('toolCalling is false in this extension. This report does not change it.');
+    write('toolCalling is advertised true. A host tool call is emitted only for a host_tool_request whose name VS Code offered and that Pi did not already start.');
     write('');
     write('Extension');
     write(`id: ${input.extensionId}`);

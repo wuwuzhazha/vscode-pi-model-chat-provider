@@ -1,15 +1,20 @@
 import type { PiEvent } from './protocol/events.js';
+import type { HostToolRequest } from './tool-policy.js';
 
 export interface StreamState {
     streamedText: boolean;
     reportedToolActivity: boolean;
     agentError?: string;
     limitations: string[];
+    /** Tools Pi started. These must not also be sent to VS Code. */
+    piExecutedTools: string[];
+    /** Host tool requests Pi emitted without starting the tool. */
+    hostToolRequests: HostToolRequest[];
 }
 
 /**
- * Turn Pi events into chat text. Never produces a host tool-call part:
- * VS Code would try to execute it and call the provider again.
+ * Turn Pi events into chat text. Host tool-call parts are decided later from
+ * `hostToolRequests` and are not produced here.
  */
 export function applyAgentEvent(event: PiEvent, state: StreamState): string[] {
     const chunks: string[] = [];
@@ -37,8 +42,16 @@ export function applyAgentEvent(event: PiEvent, state: StreamState): string[] {
         }
     }
 
+    if (event.type === 'host_tool_request') {
+        state.hostToolRequests.push(readHostToolRequest(event));
+        return chunks;
+    }
+
     if (event.type === 'tool_execution_start') {
         state.reportedToolActivity = true;
+        if (event.toolName) {
+            state.piExecutedTools.push(event.toolName);
+        }
         const args = event.args && typeof event.args === 'object' && Object.keys(event.args).length > 0
             ? ` ${JSON.stringify(event.args)}`
             : '';
@@ -92,5 +105,22 @@ export function createStreamState(): StreamState {
         streamedText: false,
         reportedToolActivity: false,
         limitations: [],
+        piExecutedTools: [],
+        hostToolRequests: [],
     };
+}
+
+function readHostToolRequest(event: PiEvent): HostToolRequest {
+    const name = typeof event.toolName === 'string' ? event.toolName : '';
+    const callId = typeof event.callId === 'string' ? event.callId : '';
+    const raw = isPlainObject(event.input) ? event.input : isPlainObject(event.args) ? event.args : {};
+    const input: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(raw)) {
+        input[key] = value;
+    }
+    return { callId, name, input };
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === 'object' && !Array.isArray(value);
 }

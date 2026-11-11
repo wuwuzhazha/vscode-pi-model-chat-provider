@@ -4,6 +4,11 @@ All notable changes to the "vscode-pi-model-chat-provider" extension will be doc
 
 This line and the entries below 0.3.0 describe the original tintinweb extension. 0.3.0 is the first release of the [wuwuzhazha fork](https://github.com/wuwuzhazha/vscode-pi-model-chat-provider). The license remains MIT. Copyright for the original work remains tintinweb.
 
+## [0.3.4] - 2026-11-11
+
+### Changed
+- `toolCalling` is true so VS Code 1.144.1 Agent-kind modes, including the custom agent labeled Ask, can list Pi. A host tool call is emitted only for a `host_tool_request` whose name VS Code offered and that Pi did not already start. `toolMode` Required with no such request fails instead of inventing a call. Pi's own tools stay text and are not sent to VS Code. A tool result already executed by VS Code is forwarded as text and is not run again.
+
 ## [0.3.3] - 2026-11-11
 
 ### Added

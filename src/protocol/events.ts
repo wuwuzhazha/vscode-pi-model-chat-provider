@@ -11,7 +11,9 @@ export interface PiEvent {
         delta?: string;
     };
     toolName?: string;
+    callId?: string;
     args?: unknown;
+    input?: unknown;
     isError?: boolean;
     result?: {
         content?: Array<{

@@ -2,7 +2,7 @@
   "name": "vscode-pi-model-chat-provider",
   "displayName": "Pi Coding Agent - Language Model Provider",
   "description": "Fork of tintinweb's extension. Use a user-installed Pi CLI from VS Code chat via the native Language Model Provider API. Not published from this repository.",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "publisher": "tintinweb",
   "preview": true,
   "icon": "images/pi-logo-black.png",

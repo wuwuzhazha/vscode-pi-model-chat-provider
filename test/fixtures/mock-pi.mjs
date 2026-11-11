@@ -40,6 +40,7 @@ if (sessionFile) {
 const pendingUi = new Map();
 let chain = Promise.resolve();
 let buffer = Buffer.alloc(0);
+let lastPrompt = '';
 
 function writeObject(value) {
     const line = `${JSON.stringify(value)}\n`;
@@ -94,6 +95,11 @@ async function handle(message) {
                 id: 'claude-sonnet',
                 contextWindow: 200000,
                 maxTokens: 8192,
+            }, {
+                provider: 'magpie',
+                id: 'auto/deepseek-v4.1-flash',
+                contextWindow: 512000,
+                maxTokens: 64000,
             }],
         });
         return;
@@ -105,7 +111,10 @@ async function handle(message) {
         return;
     }
     if (type === 'get_last_assistant_text') {
-        reply(id, type, { text: 'hello from pi' });
+        const text = scenario === 'host-tool' && !lastPrompt.includes('VS Code tool result')
+            ? ''
+            : 'hello from pi';
+        reply(id, type, { text });
         return;
     }
     if (type === 'get_session_stats') {
@@ -138,6 +147,56 @@ async function handle(message) {
 
     reply(id, 'prompt', { disposition: 'started' });
     log('prompt-accepted');
+    lastPrompt = typeof message.message === 'string' ? message.message : '';
+
+    if (scenario === 'host-tool') {
+        emit({ type: 'agent_start' });
+        if (lastPrompt.includes('VS Code tool result')) {
+            emit({
+                type: 'message_update',
+                assistantMessageEvent: { type: 'text_delta', delta: 'continued after host tool' },
+            });
+        } else {
+            emit({
+                type: 'host_tool_request',
+                toolName: 'read_file',
+                callId: 'call-1',
+                input: { path: 'src/a.ts' },
+            });
+        }
+        emit({ type: 'agent_end' });
+        await new Promise((resolve) => setTimeout(resolve, settleDelay));
+        emit({ type: 'agent_settled' });
+        return;
+    }
+    if (scenario === 'host-tool-ran') {
+        emit({ type: 'agent_start' });
+        emit({
+            type: 'tool_execution_start',
+            toolName: 'read_file',
+            args: { path: 'src/a.ts' },
+        });
+        emit({
+            type: 'tool_execution_end',
+            toolName: 'read_file',
+            isError: false,
+            result: { content: [{ type: 'text', text: 'from pi' }] },
+        });
+        emit({
+            type: 'host_tool_request',
+            toolName: 'read_file',
+            callId: 'call-1',
+            input: { path: 'src/a.ts' },
+        });
+        emit({
+            type: 'message_update',
+            assistantMessageEvent: { type: 'text_delta', delta: 'pi ran read_file' },
+        });
+        emit({ type: 'agent_end' });
+        await new Promise((resolve) => setTimeout(resolve, settleDelay));
+        emit({ type: 'agent_settled' });
+        return;
+    }
 
     if (scenario === 'crash') {
         process.stderr.write('model exploded\n');

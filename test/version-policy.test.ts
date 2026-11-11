@@ -10,7 +10,7 @@ import {
     MIN_PI_VERSION,
     parseSemver,
 } from '../src/protocol/version.js';
-import { decideHostTools, modelCapabilities, visibleInChatModelPicker } from '../src/tool-policy.js';
+import { modelCapabilities, resolveHostToolTurn, TOOL_MODE_AUTO, TOOL_MODE_REQUIRED, visibleInChatModelPicker } from '../src/tool-policy.js';
 import { dialogToResponse, mapConfirmChoice, mapValueChoice } from '../src/ui-protocol.js';
 import { resolveSessionDirectory, resolveWorkingDirectory } from '../src/workspace-policy.js';
 import { applyAgentEvent, createStreamState } from '../src/render.js';
@@ -38,11 +38,49 @@ test('vendor prefix stripping keeps slashes that belong to the model id', () => 
     assert.equal(parsed.modelId, 'anthropic/claude-3.5-sonnet');
 });
 
-test('host tool capability is false and required mode fails visibly', () => {
-    assert.equal(modelCapabilities().toolCalling, false);
-    assert.equal(decideHostTools(1, 0).notice, undefined);
-    assert.match(decideHostTools(1, 2).notice ?? '', /does not call them/);
-    assert.throws(() => decideHostTools(2, 1), /toolMode Required/);
+test('host tool calls are forwarded only when Pi asked and did not already start the tool', () => {
+    assert.equal(modelCapabilities().toolCalling, true);
+    const offered = [{ name: 'read_file' }];
+    const request = { callId: 'call-1', name: 'read_file', input: { path: 'src/a.ts' } };
+    const forwarded = resolveHostToolTurn({
+        toolMode: TOOL_MODE_REQUIRED,
+        offered,
+        priorCallIds: new Set(),
+        requested: [request],
+        executedByPi: [],
+    });
+    assert.deepEqual(forwarded.calls, [request]);
+    assert.equal(forwarded.error, undefined);
+
+    const again = resolveHostToolTurn({
+        toolMode: TOOL_MODE_AUTO,
+        offered,
+        priorCallIds: new Set(['call-1']),
+        requested: [request],
+        executedByPi: [],
+    });
+    assert.equal(again.calls.length, 0);
+    assert.match(again.notices.join('\n'), /already sent/);
+
+    const ranInsidePi = resolveHostToolTurn({
+        toolMode: TOOL_MODE_REQUIRED,
+        offered,
+        priorCallIds: new Set(),
+        requested: [request],
+        executedByPi: ['read_file'],
+    });
+    assert.equal(ranInsidePi.calls.length, 0);
+    assert.match(ranInsidePi.error ?? '', /does not invent a call/);
+
+    const autoText = resolveHostToolTurn({
+        toolMode: TOOL_MODE_AUTO,
+        offered,
+        priorCallIds: new Set(),
+        requested: [],
+        executedByPi: ['bash'],
+    });
+    assert.equal(autoText.calls.length, 0);
+    assert.match(autoText.notices.join('\n'), /none were called/);
 });
 
 test('transcribed 1.144.1 filter keeps Local Ask and drops Agent, a foreign pool, and a hidden id', () => {

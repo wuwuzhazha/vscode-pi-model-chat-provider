@@ -170,7 +170,7 @@ function renderPart(
     }
     if (part.kind === 'tool-call') {
         ctx.limitations.push(
-            `VS Code tool call "${part.toolName ?? 'unknown'}" was included as text. It was not sent to Pi as a Pi tool call and was not invoked by this provider.`
+            `VS Code tool call "${part.toolName ?? 'unknown'}" was included as text. It was not sent to Pi as a Pi tool call and was not invoked again.`
         );
         return `[VS Code tool call ${part.toolName ?? 'unknown'} id=${part.toolCallId ?? ''} input=${safeJson(part.input)}]`;
     }
@@ -180,9 +180,9 @@ function renderPart(
             attachImages: false,
         }));
         ctx.limitations.push(
-            `VS Code tool result ${part.toolCallId ?? ''} was flattened to text. This provider does not replay it as a Pi tool result.`
+            `VS Code tool result ${part.toolCallId ?? ''} is forwarded as text for Pi to read. This provider does not run that tool and does not ask Pi to run it.`
         );
-        return `[VS Code tool result ${part.toolCallId ?? ''}]\n${inner.join('\n')}`.trim();
+        return `[VS Code tool result ${part.toolCallId ?? ''} — already executed by VS Code; do not run it again]\n${inner.join('\n')}`.trim();
     }
     const label = part.label ?? part.mimeType ?? 'unknown';
     const bytes = part.data?.byteLength;

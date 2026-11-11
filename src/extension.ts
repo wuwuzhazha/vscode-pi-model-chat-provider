@@ -26,7 +26,7 @@ export function activate(context: vscode.ExtensionContext): void {
     channel.appendLine(
         'Pi language model provider — fork of tintinweb/vscode-pi-model-chat-provider (MIT), ' +
         'repository wuwuzhazha/vscode-pi-model-chat-provider. ' +
-        'Host tool calling is disabled. Pi tools run inside Pi and are shown as text.'
+        'Host tool calls are forwarded only when Pi requests an offered tool it has not already started. Pi tools stay inside Pi.'
     );
     context.subscriptions.push(channel);
 

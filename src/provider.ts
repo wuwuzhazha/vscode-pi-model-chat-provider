@@ -1,11 +1,11 @@
 import * as vscode from 'vscode';
-import { PiCancelledError, PiError } from './errors.js';
+import { HostToolsError, PiCancelledError, PiError } from './errors.js';
 import type { InboundMessage, InboundPart } from './messages.js';
 import { parseRegisteredModelId } from './model-id.js';
 import type { PiModelInfo } from './pi-process.js';
 import { applyAgentEvent, createStreamState } from './render.js';
 import type { SessionPool } from './session-pool.js';
-import { decideHostTools, MODEL_DETAIL, MODEL_TOOLTIP, modelCapabilities } from './tool-policy.js';
+import { MODEL_DETAIL, MODEL_TOOLTIP, modelCapabilities, resolveHostToolTurn } from './tool-policy.js';
 import { debug, getOutputChannel } from './debug.js';
 import { redactSecrets, type RegisteredModelRecord } from './picker-diagnostics.js';
 
@@ -52,7 +52,7 @@ export class PiChatProvider implements vscode.LanguageModelChatProvider {
             getOutputChannel().appendLine(
                 `Registered ${this.registration.models.length} Pi model(s)` +
                 `${ids ? `: ${ids}` : ''}. ` +
-                'toolCalling=false; isUserSelectable=true; targetChatSessionType unset; isBYOK unset.'
+                'toolCalling=true; isUserSelectable=true; targetChatSessionType unset; isBYOK unset.'
             );
             return infos;
         } catch (error) {
@@ -77,11 +77,6 @@ export class PiChatProvider implements vscode.LanguageModelChatProvider {
         token: vscode.CancellationToken
     ): Promise<void> {
         const parsed = parseRegisteredModelId(model.id, this.modelProviders);
-        const decision = decideHostTools(options.toolMode, options.tools?.length ?? 0);
-        if (decision.notice) {
-            progress.report(new vscode.LanguageModelTextPart(decision.notice));
-        }
-
         const inbound = messages.map((message) => toInboundMessage(message));
         const state = createStreamState();
         let outcome;
@@ -119,7 +114,24 @@ export class PiChatProvider implements vscode.LanguageModelChatProvider {
             return;
         }
 
-        if (outcome.duplicate || !state.streamedText) {
+        const decision = resolveHostToolTurn({
+            toolMode: options.toolMode,
+            offered: (options.tools ?? []).map((tool) => ({ name: tool.name })),
+            priorCallIds: priorHostCallIds(inbound),
+            requested: state.hostToolRequests,
+            executedByPi: state.piExecutedTools,
+        });
+        for (const notice of decision.notices) {
+            progress.report(new vscode.LanguageModelTextPart(`${notice}\n`));
+        }
+        if (decision.error) {
+            throw new HostToolsError(decision.error);
+        }
+        for (const call of decision.calls) {
+            progress.report(new vscode.LanguageModelToolCallPart(call.callId, call.name, call.input));
+        }
+
+        if (decision.calls.length === 0 && (outcome.duplicate || !state.streamedText)) {
             const text = await outcome.getLastAssistantText();
             if (text) {
                 if (!state.streamedText) {
@@ -174,9 +186,9 @@ export class PiChatProvider implements vscode.LanguageModelChatProvider {
         const id = `${model.provider}:${model.id}`;
         this.modelProviders.set(id, model.provider);
         const family = model.id.split('-').slice(0, -1).join('-') || model.id;
-        // 1.109 hid models unless this was true. 1.144.1 copies the field with no
-        // proposed-API check and treats omission as visible. It is set explicitly
-        // so a 1.109 host and a 1.144 host see the same value. toolCalling stays false.
+        // 1.109 hid models unless this was true. 1.144.1 Agent-kind modes, including
+        // the custom agent labeled Ask, require toolCalling. The flag is true.
+        // Host tool parts are emitted only by resolveHostToolTurn.
         const info: vscode.LanguageModelChatInformation & { isUserSelectable: true } = {
             id,
             name: `pi /${model.provider}/${model.id}`,
@@ -215,6 +227,18 @@ function recordFromInfo(info: vscode.LanguageModelChatInformation): RegisteredMo
         isBYOK: extra.isBYOK,
         category,
     };
+}
+
+function priorHostCallIds(messages: readonly InboundMessage[]): Set<string> {
+    const ids = new Set<string>();
+    for (const message of messages) {
+        for (const part of message.parts) {
+            if (part.kind === 'tool-call' && part.toolCallId) {
+                ids.add(part.toolCallId);
+            }
+        }
+    }
+    return ids;
 }
 
 function toInboundMessage(message: vscode.LanguageModelChatRequestMessage): InboundMessage {

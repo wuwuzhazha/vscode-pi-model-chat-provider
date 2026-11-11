@@ -6,7 +6,9 @@ import * as path from 'node:path';
 import test from 'node:test';
 import type { ChildProcess } from 'node:child_process';
 import { PiCancelledError, PiHungError } from '../src/errors.js';
+import { applyAgentEvent, createStreamState } from '../src/render.js';
 import { PiProcess, type SpawnImpl } from '../src/pi-process.js';
+import { resolveHostToolTurn, TOOL_MODE_AUTO, TOOL_MODE_REQUIRED } from '../src/tool-policy.js';
 import type { ExtensionUiRequest, PiUi } from '../src/ui-protocol.js';
 import { FakeToken, installMockBinary, makeWorkspace, memoryLogger, repoRoot, testConfig, waitFor } from './helpers.js';
 
@@ -456,10 +458,97 @@ function fakeProcess(): ChildProcess {
     return child;
 }
 
-test('provider source does not construct host tool-call parts or a chat participant', async () => {
+test('mock host tool request is forwarded once and the continuation does not call it again', async () => {
+    const harness = await createHarness({
+        MOCK_PI_SCENARIO: 'host-tool',
+        MOCK_PI_SETTLE_DELAY_MS: '20',
+    });
+    try {
+        await harness.proc.newSession();
+        const first = createStreamState();
+        await harness.proc.sendPrompt({
+            prompt: 'read the file',
+            model: { provider: 'magpie', modelId: 'auto/deepseek-v4.1-flash' },
+            token: new FakeToken(),
+            onEvent: (event) => {
+                applyAgentEvent(event, first);
+            },
+        });
+        const required = resolveHostToolTurn({
+            toolMode: TOOL_MODE_REQUIRED,
+            offered: [{ name: 'read_file' }],
+            priorCallIds: new Set(),
+            requested: first.hostToolRequests,
+            executedByPi: first.piExecutedTools,
+        });
+        assert.deepEqual(required.calls, [{
+            callId: 'call-1',
+            name: 'read_file',
+            input: { path: 'src/a.ts' },
+        }]);
+        assert.equal(first.piExecutedTools.length, 0);
+
+        const second = createStreamState();
+        await harness.proc.sendPrompt({
+            prompt: '[VS Code tool result call-1 — already executed by VS Code; do not run it again]\nfile contents',
+            model: { provider: 'magpie', modelId: 'auto/deepseek-v4.1-flash' },
+            token: new FakeToken(),
+            onEvent: (event) => {
+                applyAgentEvent(event, second);
+            },
+        });
+        const auto = resolveHostToolTurn({
+            toolMode: TOOL_MODE_AUTO,
+            offered: [{ name: 'read_file' }],
+            priorCallIds: new Set(required.calls.map((call) => call.callId)),
+            requested: second.hostToolRequests,
+            executedByPi: second.piExecutedTools,
+        });
+        assert.equal(auto.calls.length, 0);
+        assert.equal(second.streamedText, true);
+        assert.equal(auto.error, undefined);
+    } finally {
+        await harness.cleanup();
+    }
+});
+
+test('a host tool Pi already started is not forwarded', async () => {
+    const harness = await createHarness({
+        MOCK_PI_SCENARIO: 'host-tool-ran',
+        MOCK_PI_SETTLE_DELAY_MS: '20',
+    });
+    try {
+        await harness.proc.newSession();
+        const state = createStreamState();
+        await harness.proc.sendPrompt({
+            prompt: 'read',
+            model: { provider: 'magpie', modelId: 'auto/deepseek-v4.1-flash' },
+            token: new FakeToken(),
+            onEvent: (event) => {
+                applyAgentEvent(event, state);
+            },
+        });
+        const decision = resolveHostToolTurn({
+            toolMode: TOOL_MODE_REQUIRED,
+            offered: [{ name: 'read_file' }],
+            priorCallIds: new Set(),
+            requested: state.hostToolRequests,
+            executedByPi: state.piExecutedTools,
+        });
+        assert.equal(decision.calls.length, 0);
+        assert.match(decision.error ?? '', /does not invent a call/);
+        assert.match(decision.notices.join('\n'), /not sent to VS Code/);
+    } finally {
+        await harness.cleanup();
+    }
+});
+
+test('provider emits host tool-call parts only through the turn decision and is not a chat participant', async () => {
     const source = await readFile(path.join(repoRoot(), 'src', 'provider.ts'), 'utf8');
-    assert.equal(source.includes('new vscode.LanguageModelToolCallPart'), false);
+    const render = await readFile(path.join(repoRoot(), 'src', 'render.ts'), 'utf8');
+    assert.match(source, /new vscode\.LanguageModelToolCallPart/);
+    assert.match(source, /resolveHostToolTurn/);
     assert.equal(source.includes('createChatParticipant'), false);
     assert.equal(source.includes('registerChatParticipant'), false);
-    assert.match(source, /toolCalling: false|modelCapabilities\(\)/);
+    assert.equal(render.includes('LanguageModelToolCallPart'), false);
 });

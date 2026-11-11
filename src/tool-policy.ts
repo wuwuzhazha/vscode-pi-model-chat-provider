@@ -1,47 +1,123 @@
-import { HostToolsError } from './errors.js';
-
 /**
- * Copy used in the model picker, chat, and README. Pi's tools are not
- * VS Code language-model tools.
+ * Two tool systems:
+ * - Host tools are the ones VS Code put on the request. This provider emits
+ *   `LanguageModelToolCallPart` only for a `host_tool_request` whose name was
+ *   offered and that Pi did not already start. VS Code then runs that tool.
+ * - Pi tools (bash, read, edit, and anything else Pi starts) run inside Pi.
+ *   They are text in the chat. They are never also sent to VS Code.
+ *
+ * A VS Code tool approval does not approve Pi tools. Allow on a Pi dialog
+ * does not approve a VS Code tool.
  */
-export const HOST_TOOL_NOTICE =
-    'VS Code offered host tools to this model. This provider does not call them and does not emit VS Code tool cards. ' +
-    'Pi may still run its own bash, read, and edit tools inside the Pi process. ' +
-    'A VS Code tool approval does not approve Pi tools, and Allow on a Pi dialog does not approve VS Code tools.';
+export const HOST_TOOL_BOUNDARY =
+    'Host tools run in VS Code only after this provider emits a tool-call part for an offered tool Pi did not already start. ' +
+    'Pi tools run inside Pi and stay text. Neither approval covers the other system.';
 
-export const MODEL_DETAIL = 'Host tool calling is off. Pi runs its own tools inside Pi.';
+export const MODEL_DETAIL = 'Host tools are forwarded only when Pi asks and has not already run them. Pi tools stay inside Pi.';
 
 export const MODEL_TOOLTIP =
     'Pi Coding Agent through the language model provider API. ' +
-    'Host tool calling is off. Tool activity is text, not a VS Code tool card. ' +
-    HOST_TOOL_NOTICE;
+    HOST_TOOL_BOUNDARY;
 
-export interface HostToolDecision {
-    notice?: string;
+/** VS Code `LanguageModelChatToolMode.Auto`. The model may answer with text. */
+export const TOOL_MODE_AUTO = 1;
+/** VS Code `LanguageModelChatToolMode.Required`. The response must include a host tool call. */
+export const TOOL_MODE_REQUIRED = 2;
+
+export interface HostToolOffer {
+    readonly name: string;
+}
+
+export interface HostToolRequest {
+    readonly callId: string;
+    readonly name: string;
+    readonly input: Record<string, unknown>;
+}
+
+export interface HostToolTurn {
+    readonly calls: readonly HostToolRequest[];
+    readonly notices: readonly string[];
+    readonly error?: string;
 }
 
 /**
- * `toolCalling` is advertised as false. If a host asks anyway:
- * - Required cannot be honored, so the request fails visibly.
- * - Auto is answered with text and a single notice, never with tool-call parts.
+ * Decide which host tool calls to emit after Pi's stream ends.
+ * Does not invent a call. Does not forward a tool Pi already started.
  */
-export function decideHostTools(toolMode: number | undefined, toolCount: number): HostToolDecision {
-    if (toolMode === 2) {
-        throw new HostToolsError(
-            'This Pi provider cannot honor toolMode Required. ' +
-            'It does not implement VS Code host tool calls. ' +
-            HOST_TOOL_NOTICE
+export function resolveHostToolTurn(input: {
+    readonly toolMode: number | undefined;
+    readonly offered: readonly HostToolOffer[];
+    readonly priorCallIds: ReadonlySet<string>;
+    readonly requested: readonly HostToolRequest[];
+    readonly executedByPi: readonly string[];
+}): HostToolTurn {
+    const offered = new Set(input.offered.map((tool) => tool.name).filter((name) => name.length > 0));
+    const executed = new Set(input.executedByPi);
+    const seen = new Set(input.priorCallIds);
+    const calls: HostToolRequest[] = [];
+    const notices: string[] = [];
+
+    input.requested.forEach((request, index) => {
+        const name = request.name.trim();
+        if (!name) {
+            notices.push('Ignored a host tool request with no name.');
+            return;
+        }
+        if (!offered.has(name)) {
+            notices.push(
+                `Pi requested "${name}", which VS Code did not offer. It was not called.`
+            );
+            return;
+        }
+        if (executed.has(name)) {
+            notices.push(
+                `Pi already started "${name}" inside the Pi process. That call was not sent to VS Code, so it is not run a second time.`
+            );
+            return;
+        }
+        const callId = request.callId.trim() || fallbackCallId(name, request.input, index);
+        if (seen.has(callId)) {
+            notices.push(
+                `Host tool call "${callId}" was already sent. It was not sent again.`
+            );
+            return;
+        }
+        seen.add(callId);
+        calls.push({ callId, name, input: request.input });
+    });
+
+    if (input.toolMode === TOOL_MODE_REQUIRED && calls.length === 0) {
+        return {
+            calls: [],
+            notices,
+            error:
+                'toolMode Required needs a host tool call for an offered tool. ' +
+                'Pi did not request one that it had not already started. ' +
+                'This provider does not invent a call and does not run host tools inside Pi. ' +
+                HOST_TOOL_BOUNDARY,
+        };
+    }
+    if (offered.size > 0 && calls.length === 0 && input.toolMode !== TOOL_MODE_REQUIRED) {
+        notices.push(
+            'VS Code offered host tools. Pi did not request one that was still unstarted, so none were called. ' +
+            'Pi tools, if any, ran only inside Pi.'
         );
     }
-    if (toolCount > 0) {
-        return { notice: HOST_TOOL_NOTICE };
-    }
-    return {};
+    return { calls, notices };
 }
 
-/** Capabilities reported to VS Code. toolCalling false means this is not an agent-mode model. */
-export function modelCapabilities(): { readonly toolCalling: false; readonly imageInput: true } {
-    return { toolCalling: false, imageInput: true };
+function fallbackCallId(name: string, input: Record<string, unknown>, index: number): string {
+    const raw = JSON.stringify(input);
+    let hash = 0;
+    for (let i = 0; i < raw.length; i++) {
+        hash = (Math.imul(hash, 31) + raw.charCodeAt(i)) >>> 0;
+    }
+    return `host:${name}:${index}:${hash.toString(16)}`;
+}
+
+/** Capabilities reported to VS Code. toolCalling true is what 1.144 Agent-kind modes require. */
+export function modelCapabilities(): { readonly toolCalling: true; readonly imageInput: true } {
+    return { toolCalling: true, imageInput: true };
 }
 
 /**
@@ -49,8 +125,7 @@ export function modelCapabilities(): { readonly toolCalling: false; readonly ima
  * `mode: 'ask'` is `ChatModeKind.Ask`. The mode button labeled Ask on that
  * build is normally the Copilot custom agent, whose omitted `kind` becomes
  * `ChatModeKind.Agent` (`chatModes.ts`). That path is `mode: 'agent'` here.
- * A Linux run of 1.144.1 showed the labeled Ask picker with no Pi row while
- * `selectChatModels` still returned the models.
+ * With `toolCalling` true that labeled Ask path can list the model.
  *
  * `filterModelsForSession` in
  * src/vs/workbench/contrib/chat/browser/widget/input/chatInputModelUtils.ts
