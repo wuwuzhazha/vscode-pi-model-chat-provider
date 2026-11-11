@@ -4,6 +4,15 @@ All notable changes to the "vscode-pi-model-chat-provider" extension will be doc
 
 This line and the entries below 0.3.0 describe the original tintinweb extension. 0.3.0 is the first release of the [wuwuzhazha fork](https://github.com/wuwuzhazha/vscode-pi-model-chat-provider). The license remains MIT. Copyright for the original work remains tintinweb.
 
+## [0.3.3] - 2026-11-11
+
+### Added
+- Command **Pi: Show Model Picker Diagnostics** (`pi.showModelPickerDiagnostics`). It writes the running extension version, `vscode.version`, the vendor contribution, sanitized model ids and the metadata this extension returned, the stable `vscode.lm.selectChatModels` result, and non-secret preferences. It does not include prompt text, API keys, environment variables, or `pi.additionalArgs` values. The same registration line is written to the Pi Agent output channel when models are listed.
+- The report states the limits of that API: no read-back of `isUserSelectable` or `targetChatSessionType`, no access to profile storage `chatModelVisibility`, and no access to the open chat's session resource, mode, or location.
+
+### Changed
+- Model detail no longer says the model is eligible in Ask. On VS Code 1.144.1 a Local + Ask window still did not list Pi, and this repository has not executed that picker.
+
 ## [0.3.2] - 2026-11-11
 
 ### Fixed

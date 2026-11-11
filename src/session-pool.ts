@@ -58,6 +58,11 @@ export class SessionPool {
         void this.updateStatusBar(outcome);
     }
 
+    /** Version string from the metadata process, after a model listing has started Pi. */
+    probedPiVersion(): string | undefined {
+        return this.metadata?.probedVersion();
+    }
+
     async getAvailableModels(): Promise<PiModelInfo[]> {
         if (this.modelCache && Date.now() - this.modelCacheTime < MODEL_CACHE_MS) {
             return this.modelCache;

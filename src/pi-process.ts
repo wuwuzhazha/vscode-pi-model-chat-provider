@@ -187,6 +187,11 @@ export class PiProcess {
         });
     }
 
+    /** Pi version from the last successful `--version` probe, if this process reached one. */
+    probedVersion(): string | undefined {
+        return this.version?.raw;
+    }
+
     async getAvailableModels(): Promise<PiModelInfo[]> {
         return this.enqueue(async () => {
             await this.ensureStarted();

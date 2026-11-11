@@ -45,7 +45,7 @@ test('host tool capability is false and required mode fails visibly', () => {
     assert.throws(() => decideHostTools(2, 1), /toolMode Required/);
 });
 
-test('VS Code 1.144.1 picker: Local Ask shows Pi; Agent and a foreign session pool do not', () => {
+test('transcribed 1.144.1 filter keeps Local Ask and drops Agent, a foreign pool, and a hidden id', () => {
     const pi = {
         isUserSelectable: true as boolean | undefined,
         toolCalling: false,
@@ -54,6 +54,7 @@ test('VS Code 1.144.1 picker: Local Ask shows Pi; Agent and a foreign session po
         sessionHasOwnModelPool: false,
     };
     assert.equal(visibleInChatModelPicker({ ...pi, mode: 'ask', sessionType: 'local' }), true);
+    assert.equal(visibleInChatModelPicker({ ...pi, mode: 'ask', sessionType: 'local', hidden: true }), false);
     assert.equal(visibleInChatModelPicker({ ...pi, mode: 'ask', sessionType: undefined }), true);
     assert.equal(visibleInChatModelPicker({ ...pi, mode: 'agent', sessionType: 'local' }), false);
     assert.equal(visibleInChatModelPicker({

@@ -9,7 +9,7 @@ export const HOST_TOOL_NOTICE =
     'Pi may still run its own bash, read, and edit tools inside the Pi process. ' +
     'A VS Code tool approval does not approve Pi tools, and Allow on a Pi dialog does not approve VS Code tools.';
 
-export const MODEL_DETAIL = 'Pi runs its own tools. Eligible in Ask. Hidden in Agent mode because host tool calling is off.';
+export const MODEL_DETAIL = 'Host tool calling is off. Pi runs its own tools inside Pi.';
 
 export const MODEL_TOOLTIP =
     'Pi Coding Agent through the language model provider API. ' +
@@ -45,8 +45,10 @@ export function modelCapabilities(): { readonly toolCalling: false; readonly ima
 }
 
 /**
- * Chat-picker eligibility for VS Code 1.144.1 (commit 261c84cb).
- * This is a transcription of that source, not a live editor test.
+ * Chat-picker eligibility transcribed from VS Code 1.144.1 (commit 261c84cb).
+ * This is not a live editor test. A Local + Ask window on that build still
+ * omitted Pi, so a true result here is not evidence the picker shows the model.
+ * The helper also does not know the open chat's real session resource.
  *
  * `filterModelsForSession` in
  * src/vs/workbench/contrib/chat/browser/widget/input/chatInputModelUtils.ts
@@ -67,7 +69,15 @@ export function visibleInChatModelPicker(options: {
     readonly sessionType?: string;
     readonly sessionHasOwnModelPool: boolean;
     readonly targetChatSessionType?: string;
+    /**
+     * `isModelHiddenInPicker` after the session filter. Profile storage
+     * `chatModelVisibility`. Omitted means not hidden.
+     */
+    readonly hidden?: boolean;
 }): boolean {
+    if (options.hidden) {
+        return false;
+    }
     if (options.isUserSelectable === false) {
         return false;
     }

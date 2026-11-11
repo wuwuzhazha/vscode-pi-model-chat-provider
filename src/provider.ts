@@ -6,20 +6,37 @@ import type { PiModelInfo } from './pi-process.js';
 import { applyAgentEvent, createStreamState } from './render.js';
 import type { SessionPool } from './session-pool.js';
 import { decideHostTools, MODEL_DETAIL, MODEL_TOOLTIP, modelCapabilities } from './tool-policy.js';
-import { debug } from './debug.js';
+import { debug, getOutputChannel } from './debug.js';
+import { redactSecrets, type RegisteredModelRecord } from './picker-diagnostics.js';
 
 /**
  * Native language model chat provider. Pi stays behind RPC.
  * This is not a chat participant and not a webview.
  */
+export interface RegistrationSnapshot {
+    readonly models: readonly RegisteredModelRecord[];
+    readonly error?: string;
+    readonly piVersion?: string;
+}
+
 export class PiChatProvider implements vscode.LanguageModelChatProvider {
     private readonly modelProviders = new Map<string, string>();
     private warned = false;
+    private registration: { models: RegisteredModelRecord[]; error?: string } = { models: [] };
 
     constructor(private pool: SessionPool) {}
 
     setPool(pool: SessionPool): void {
         this.pool = pool;
+    }
+
+    /** Last provideLanguageModelChatInformation result. Metadata is what this extension sent. */
+    registrationSnapshot(): RegistrationSnapshot {
+        return {
+            models: this.registration.models,
+            error: this.registration.error,
+            piVersion: this.pool.probedPiVersion(),
+        };
     }
 
     async provideLanguageModelChatInformation(
@@ -29,10 +46,21 @@ export class PiChatProvider implements vscode.LanguageModelChatProvider {
         try {
             const models = await this.pool.getAvailableModels();
             this.modelProviders.clear();
-            return models.map((model) => this.toModelInformation(model));
+            const infos = models.map((model) => this.toModelInformation(model));
+            this.registration = { models: infos.map((info) => recordFromInfo(info)) };
+            const ids = this.registration.models.map((model) => model.id).join(', ');
+            getOutputChannel().appendLine(
+                `Registered ${this.registration.models.length} Pi model(s)` +
+                `${ids ? `: ${ids}` : ''}. ` +
+                'toolCalling=false; isUserSelectable=true; targetChatSessionType unset; isBYOK unset.'
+            );
+            return infos;
         } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
+            const message = redactSecrets(error instanceof Error ? error.message : String(error));
+            this.registration = { models: [], error: message };
+            this.modelProviders.clear();
             console.error('Failed to get Pi models:', message);
+            getOutputChannel().appendLine(`Pi model registration failed: ${message}`);
             if (!this.warned) {
                 this.warned = true;
                 void vscode.window.showWarningMessage(message);
@@ -146,9 +174,9 @@ export class PiChatProvider implements vscode.LanguageModelChatProvider {
         const id = `${model.provider}:${model.id}`;
         this.modelProviders.set(id, model.provider);
         const family = model.id.split('-').slice(0, -1).join('-') || model.id;
-        // 1.109 hid models unless this was true. 1.144.1 treats omission as visible
-        // (`!== false`) but still drops the model from non-local session pools and
-        // from Agent mode while toolCalling is false.
+        // 1.109 hid models unless this was true. 1.144.1 copies the field with no
+        // proposed-API check and treats omission as visible. It is set explicitly
+        // so a 1.109 host and a 1.144 host see the same value. toolCalling stays false.
         const info: vscode.LanguageModelChatInformation & { isUserSelectable: true } = {
             id,
             name: `pi /${model.provider}/${model.id}`,
@@ -163,6 +191,30 @@ export class PiChatProvider implements vscode.LanguageModelChatProvider {
         };
         return info;
     }
+}
+
+function recordFromInfo(info: vscode.LanguageModelChatInformation): RegisteredModelRecord {
+    const extra = info as vscode.LanguageModelChatInformation & {
+        isUserSelectable?: boolean;
+        targetChatSessionType?: string;
+        isBYOK?: boolean;
+        category?: string | { label?: string };
+    };
+    const category = typeof extra.category === 'string' ? extra.category : extra.category?.label;
+    return {
+        id: info.id,
+        name: info.name,
+        family: info.family,
+        version: info.version,
+        maxInputTokens: info.maxInputTokens,
+        maxOutputTokens: info.maxOutputTokens,
+        toolCalling: info.capabilities.toolCalling === true,
+        imageInput: info.capabilities.imageInput === true,
+        isUserSelectable: extra.isUserSelectable,
+        targetChatSessionType: extra.targetChatSessionType,
+        isBYOK: extra.isBYOK,
+        category,
+    };
 }
 
 function toInboundMessage(message: vscode.LanguageModelChatRequestMessage): InboundMessage {
