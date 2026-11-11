@@ -1,5 +1,6 @@
 # Build output
 out/
+out-test/
 dist/
 
 # Dependencies

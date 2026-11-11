@@ -1,16 +1,12 @@
 /**
- * Debug logging utility
- * Conditionally logs messages based on pi.debug configuration
+ * Debug logging utility.
+ * Writes to the shared "Pi Agent" output channel when pi.debug is enabled.
  */
 
 import * as vscode from 'vscode';
 
 let channel: vscode.OutputChannel | undefined;
 
-/**
- * Shared "Pi Agent" output channel. All logging (RPC traffic and debug
- * output) goes here so users have a single place to inspect.
- */
 export function getOutputChannel(): vscode.OutputChannel {
     if (!channel) {
         channel = vscode.window.createOutputChannel('Pi Agent');
@@ -18,26 +14,20 @@ export function getOutputChannel(): vscode.OutputChannel {
     return channel;
 }
 
-/**
- * Debug logger that respects the pi.debug configuration setting.
- * Writes to the shared "Pi Agent" output channel.
- */
-export function debug(...args: any[]): void {
+export function debug(...args: unknown[]): void {
     const isDebugEnabled = vscode.workspace.getConfiguration('pi').get<boolean>('debug', false);
-
-    if (isDebugEnabled) {
-        const msg = args
-            .map(a => {
-                if (typeof a === 'string') {
-                    return a;
-                }
-                try {
-                    return JSON.stringify(a);
-                } catch {
-                    return String(a);
-                }
-            })
-            .join(' ');
-        getOutputChannel().appendLine(`[debug] ${msg}`);
+    if (!isDebugEnabled) {
+        return;
     }
+    const message = args.map((value) => {
+        if (typeof value === 'string') {
+            return value;
+        }
+        try {
+            return JSON.stringify(value);
+        } catch {
+            return String(value);
+        }
+    }).join(' ');
+    getOutputChannel().appendLine(`[debug] ${message}`);
 }
