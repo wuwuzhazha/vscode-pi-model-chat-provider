@@ -50,13 +50,15 @@ Tested in CI against a mock of the documented RPC protocol, not against a live m
 3. Open a **trusted** folder. Restricted mode does not start Pi.
 4. In chat, pick a `pi /provider/model` entry.
 
+On Windows, leave `pi.binaryPath` as `pi` when that command works in a terminal whose PATH the Extension Host inherited. The extension finds `pi.cmd` (or the matching `.ps1` or extensionless npm script), then starts the `node.exe` next to that shim with Pi's `cli.js`. It does not run the shim in `cmd.exe`. If PowerShell only sees `pi` because a profile prepends PATH, set `pi.binaryPath` to the full path of `pi.cmd` or of the `cli.js`. Do not point it at `node.exe` alone.
+
 API keys stay in Pi's own config and environment. This extension does not read or store them. Do not put secrets in `pi.additionalArgs`.
 
 ## Settings
 
 | Setting | Default | Role |
 | --- | --- | --- |
-| `pi.binaryPath` | `pi` | Executable. On Windows, a `.cmd` shim may need the real executable path because the process is spawned without a shell. |
+| `pi.binaryPath` | `pi` | Command or full path. On Windows, `pi`, `pi.cmd`, `pi.ps1`, and the extensionless npm shim are resolved to the adjacent `node.exe` plus Pi's `cli.js` and started without `cmd.exe`. The PATH used is the Extension Host PATH, not a PowerShell profile. |
 | `pi.workingDirectory` | first workspace folder | Directory Pi's tools use. An explicit path may sit outside the workspace; Pi can modify it. Required when no folder is open. |
 | `pi.autoRestart` | `true` | After an unexpected exit, allow another start up to `pi.maxRestartAttempts`. |
 | `pi.maxRestartAttempts` | `3` | Restart budget for one process object. A failed turn also discards that session. |
@@ -114,7 +116,7 @@ npm run compile
 npx vsce package
 ```
 
-`npm test` compiles `tsconfig.test.json` and runs Node's test runner on `out-test/test`. The mock Pi is `test/fixtures/mock-pi.mjs`.
+`npm test` compiles `tsconfig.test.json` and runs Node's test runner on `out-test/test`. The mock Pi is `test/fixtures/mock-pi.mjs`. Windows shim resolution is covered by mocked filesystem tests on every OS (`test/windows-launch.test.ts`) and by an actual `node.exe` spawn that runs only when the suite is on Windows (`test/windows-shim-actual.test.ts`). CI runs the suite on Ubuntu and Windows.
 
 Launch "Run Extension" from the Extension Development Host after `npm run compile`. Output channel: **Pi Agent**.
 

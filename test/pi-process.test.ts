@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import test from 'node:test';
+import type { ChildProcess } from 'node:child_process';
 import { PiCancelledError, PiHungError } from '../src/errors.js';
 import { PiProcess, type SpawnImpl } from '../src/pi-process.js';
 import type { ExtensionUiRequest, PiUi } from '../src/ui-protocol.js';
@@ -352,6 +354,107 @@ test('persistence passes a workspace session directory and not --no-session', as
         await harness.cleanup();
     }
 });
+
+test('mocked Windows: version probe and RPC spawn the same node.exe and cli.js', async () => {
+    const root = 'C:\\Program Files\\node-v24\\';
+    const nodeExe = `${root}node.exe`;
+    const cmd = `${root}pi.cmd`;
+    const script = `${root}node_modules\\@earendil-works\\pi-coding-agent\\dist\\bundle\\cli.js`;
+    const shim = [
+        '@ECHO off',
+        'IF EXIST "%dp0%\\node.exe" ( SET "_prog=%dp0%\\node.exe" ) ELSE ( SET "_prog=node" )',
+        '"%_prog%"  "%dp0%\\node_modules\\@earendil-works\\pi-coding-agent\\dist\\bundle\\cli.js" %*',
+    ].join('\r\n');
+    const known = new Map<string, string | true>([
+        [nodeExe.toLowerCase(), true],
+        [cmd.toLowerCase(), shim],
+        [script.toLowerCase(), true],
+    ]);
+    const calls: Array<{ command: string; args: string[] }> = [];
+    const spawnImpl: SpawnImpl = (command, args) => {
+        calls.push({ command, args: [...args] });
+        return args.includes('--version') ? versionChild() : rpcChild();
+    };
+    const proc = new PiProcess(
+        testConfig('C:\\work', 'pi', { cwd: 'C:\\work' }),
+        scriptedUi(),
+        memoryLogger(),
+        () => true,
+        spawnImpl,
+        { Path: root },
+        'win32',
+        {
+            exists: (filePath) => known.has(filePath.toLowerCase()),
+            read: (filePath) => {
+                const value = known.get(filePath.toLowerCase());
+                return typeof value === 'string' ? { text: value, head: value.slice(0, 2) } : undefined;
+            },
+        }
+    );
+    await proc.ensureReady();
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].command, nodeExe);
+    assert.deepEqual(calls[0].args.slice(0, 2), [script, '--version']);
+    assert.equal(calls[1].command, nodeExe);
+    assert.equal(calls[1].args[0], script);
+    assert.deepEqual(calls[1].args.slice(1, 3), ['--mode', 'rpc']);
+    assert.equal(calls.some((call) => call.command.toLowerCase().endsWith('cmd.exe')), false);
+    await proc.shutdown();
+});
+
+function versionChild(): ChildProcess {
+    const child = fakeProcess();
+    queueMicrotask(() => {
+        child.emit('spawn');
+        child.stdout?.emit('data', Buffer.from('1.5.2\n'));
+        Object.assign(child, { exitCode: 0 });
+        child.emit('exit', 0, null);
+    });
+    return child;
+}
+
+function rpcChild(): ChildProcess {
+    const child = fakeProcess();
+    let buffer = '';
+    const stdin = child.stdin as unknown as { write: (chunk: string) => boolean; end: () => void };
+    stdin.write = (chunk: string) => {
+        buffer += chunk;
+        let newline = buffer.indexOf('\n');
+        while (newline >= 0) {
+            const line = buffer.slice(0, newline);
+            buffer = buffer.slice(newline + 1);
+            const message = JSON.parse(line) as { id?: string; type?: string };
+            if (message.type === 'get_state') {
+                child.stdout?.emit('data', Buffer.from(JSON.stringify({
+                    type: 'response',
+                    id: message.id,
+                    command: 'get_state',
+                    success: true,
+                    data: { note: 'ok' },
+                }) + '\n'));
+            }
+            newline = buffer.indexOf('\n');
+        }
+        return true;
+    };
+    stdin.end = () => undefined;
+    queueMicrotask(() => child.emit('spawn'));
+    return child;
+}
+
+function fakeProcess(): ChildProcess {
+    const child = new EventEmitter() as ChildProcess;
+    child.stdout = new EventEmitter() as ChildProcess['stdout'];
+    child.stderr = new EventEmitter() as ChildProcess['stderr'];
+    child.stdin = new EventEmitter() as ChildProcess['stdin'];
+    Object.assign(child, { killed: false, exitCode: null, pid: 4242 });
+    child.kill = () => {
+        Object.assign(child, { killed: true, exitCode: 0 });
+        child.emit('exit', 0, null);
+        return true;
+    };
+    return child;
+}
 
 test('provider source does not construct host tool-call parts or a chat participant', async () => {
     const source = await readFile(path.join(repoRoot(), 'src', 'provider.ts'), 'utf8');

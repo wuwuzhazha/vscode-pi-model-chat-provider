@@ -29,6 +29,7 @@ import {
     type PiUi,
 } from './ui-protocol.js';
 import { assertSafeAdditionalArgs, assertWorkspaceTrusted, buildRpcArgs } from './workspace-policy.js';
+import { resolvePiLaunch, SHIM_READ_LIMIT, type PiLaunch, type PiLaunchIo } from './pi-launch.js';
 
 export interface SpawnOptions {
     cwd?: string;
@@ -98,6 +99,7 @@ export class PiProcess {
     private readonly openDialogs = new Set<string>();
     private terminalError: Error | undefined;
     private loggedLegacy = false;
+    private launch: PiLaunch | undefined;
 
     constructor(
         private readonly config: ResolvedPiConfig,
@@ -105,7 +107,9 @@ export class PiProcess {
         private readonly log: Logger,
         private readonly isTrusted: () => boolean,
         private readonly spawnImpl: SpawnImpl = spawn,
-        private readonly baseEnv: NodeJS.ProcessEnv = process.env
+        private readonly baseEnv: NodeJS.ProcessEnv = process.env,
+        private readonly platform: NodeJS.Platform = process.platform,
+        private readonly launchIo: PiLaunchIo = defaultLaunchIo
     ) {}
 
     get alive(): boolean {
@@ -461,7 +465,8 @@ export class PiProcess {
             additionalArgs: this.config.additionalArgs,
             sessionDir: this.config.sessionDir,
         });
-        this.log.info(`Starting Pi ${version.raw}: ${this.config.binaryPath} ${args.join(' ')}`);
+        const launch = this.getLaunch();
+        this.log.info(`Starting Pi ${version.raw}: ${launch.summary} args: ${args.join(' ')}`);
         this.framer.reset();
         this.stderr = '';
         this.terminalError = undefined;
@@ -470,12 +475,7 @@ export class PiProcess {
 
         let child: ChildProcess;
         try {
-            child = this.spawnImpl(this.config.binaryPath, args, {
-                cwd: this.config.cwd,
-                stdio: ['pipe', 'pipe', 'pipe'],
-                windowsHide: true,
-                env: this.baseEnv,
-            });
+            child = this.spawnConfigured(args, ['pipe', 'pipe', 'pipe']);
         } catch (error) {
             throw this.startupError(error);
         }
@@ -547,12 +547,7 @@ export class PiProcess {
         return new Promise((resolve) => {
             let child: ChildProcess;
             try {
-                child = this.spawnImpl(this.config.binaryPath, args, {
-                    cwd: this.config.cwd,
-                    stdio: ['ignore', 'pipe', 'pipe'],
-                    windowsHide: true,
-                    env: this.baseEnv,
-                });
+                child = this.spawnConfigured(args, ['ignore', 'pipe', 'pipe']);
             } catch (error) {
                 resolve({ code: null, stdout: '', stderr: '', error: error instanceof Error ? error : new Error(String(error)) });
                 return;
@@ -908,15 +903,55 @@ export class PiProcess {
         return run;
     }
 
+    private getLaunch(): PiLaunch {
+        if (this.launch) {
+            return this.launch;
+        }
+        const resolved = resolvePiLaunch({
+            binaryPath: this.config.binaryPath,
+            cwd: this.config.cwd,
+            env: this.baseEnv,
+            platform: this.platform,
+            io: this.launchIo,
+        });
+        if (!resolved.ok) {
+            throw new PiStartupError(resolved.message);
+        }
+        this.launch = resolved.launch;
+        this.log.info(resolved.launch.summary);
+        return resolved.launch;
+    }
+
+    private spawnConfigured(
+        args: readonly string[],
+        stdio: ['ignore' | 'pipe', 'ignore' | 'pipe', 'ignore' | 'pipe']
+    ): ChildProcess {
+        const launch = this.getLaunch();
+        return this.spawnImpl(launch.command, [...launch.prefixArgs, ...args], {
+            cwd: this.config.cwd,
+            stdio,
+            windowsHide: true,
+            env: this.baseEnv,
+        });
+    }
+
     private startupError(error: unknown): PiStartupError {
+        if (error instanceof PiStartupError) {
+            return error;
+        }
         const message = error instanceof Error ? error.message : String(error);
         if (message.includes('ENOENT') || message.toLowerCase().includes('not found')) {
+            if (this.launch) {
+                const prefix = this.launch.prefixArgs.length > 0 ? ` ${this.launch.prefixArgs.join(' ')}` : '';
+                return new PiStartupError(
+                    `Pi was resolved from "${this.launch.source}" to "${this.launch.command}"${prefix}, ` +
+                    `but the process could not be started (${message}). The command was not run in a shell.`
+                );
+            }
             return new PiStartupError(
-                `Pi CLI was not found at "${this.config.binaryPath}". ` +
-                'This extension does not bundle Pi. Install the CLI with `npm install -g @earendil-works/pi-coding-agent` ' +
-                '(Pi 1.x needs Node.js 22.19 or newer; Pi 0.74.x can run on Node 20) and check `pi --version`, ' +
-                'or set pi.binaryPath to the executable. ' +
-                'On Windows, point pi.binaryPath at the real executable if `pi.cmd` will not spawn without a shell.'
+                `Pi command "${this.config.binaryPath}" could not be started (${message}). ` +
+                'On Windows this usually means the npm shim was spawned directly. ' +
+                'Set pi.binaryPath to the full path of pi.cmd or of Pi\'s cli.js.'
             );
         }
         return new PiStartupError(message);
@@ -977,6 +1012,24 @@ function summarizePayload(value: unknown): string {
 function isKnownNotification(method: string): boolean {
     return method === 'notify' || method === 'setStatus' || method === 'setWidget' || method === 'setTitle' || method === 'set_editor_text';
 }
+
+const defaultLaunchIo: PiLaunchIo = {
+    exists: (filePath) => fs.existsSync(filePath),
+    read: (filePath) => {
+        try {
+            const body = fs.readFileSync(filePath);
+            if (body.length > SHIM_READ_LIMIT) {
+                return { text: '', head: '', tooLarge: true };
+            }
+            return {
+                text: body.toString('utf8'),
+                head: body.subarray(0, 2).toString('latin1'),
+            };
+        } catch {
+            return undefined;
+        }
+    },
+};
 
 function delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));

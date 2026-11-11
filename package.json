@@ -2,7 +2,7 @@
   "name": "vscode-pi-model-chat-provider",
   "displayName": "Pi Coding Agent - Language Model Provider",
   "description": "Fork of tintinweb's extension. Use a user-installed Pi CLI from VS Code chat via the native Language Model Provider API. Not published from this repository.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "tintinweb",
   "preview": true,
   "icon": "images/pi-logo-black.png",
@@ -68,7 +68,7 @@
         "pi.binaryPath": {
           "type": "string",
           "default": "pi",
-          "description": "Path to the Pi CLI binary (default: 'pi' from PATH)"
+          "description": "Pi command or full path. On Windows, a bare name or an npm pi.cmd/pi.ps1 shim is resolved to node.exe plus Pi's cli.js and started without cmd.exe. PATH is the Extension Host PATH, which can differ from a PowerShell profile."
         },
         "pi.workingDirectory": {
           "type": "string",
@@ -147,7 +147,7 @@
     "watch": "tsc -watch -p ./",
     "typecheck": "tsc -p ./ --noEmit && tsc -p ./tsconfig.test.json --noEmit",
     "lint": "eslint src test",
-    "test": "tsc -p ./tsconfig.test.json && node --test --test-timeout 20000 out-test/test/*.test.js",
+    "test": "tsc -p ./tsconfig.test.json && node scripts/run-tests.mjs",
     "package": "vsce package",
     "publish": "node scripts/refuse-publish.js"
   },

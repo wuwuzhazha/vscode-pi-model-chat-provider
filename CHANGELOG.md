@@ -4,6 +4,11 @@ All notable changes to the "vscode-pi-model-chat-provider" extension will be doc
 
 This line and the entries below 0.3.0 describe the original tintinweb extension. 0.3.0 is the first release of the [wuwuzhazha fork](https://github.com/wuwuzhazha/vscode-pi-model-chat-provider). The license remains MIT. Copyright for the original work remains tintinweb.
 
+## [0.3.1] - 2026-11-11
+
+### Fixed
+- Windows can run `pi --version` in PowerShell while the extension reported `Pi CLI not found at "pi"`. npm installs `pi.cmd`, `pi.ps1`, and an extensionless script, and spawning the bare name without a shell fails with ENOENT. The extension now resolves that command on the Extension Host PATH, reads a recognized npm shim, and starts the adjacent `node.exe` (or `node.exe` on PATH) with Pi's `cli.js` as an argument. The same argv is used for the version probe and for RPC. `cmd.exe` is not used, and arbitrary `.cmd` text is not executed. A missing command and an unlaunchable shim produce different errors. Paths with spaces stay separate arguments.
+
 ## [0.3.0] - 2026-11-11
 
 ### Added
