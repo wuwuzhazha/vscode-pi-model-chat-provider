@@ -7,7 +7,8 @@ This line and the entries below 0.3.0 describe the original tintinweb extension.
 ## [0.3.2] - 2026-11-11
 
 ### Fixed
-- Pi models were listed by the language-model provider but omitted from the chat model selector. VS Code 1.109 keeps a model in that selector only when `isUserSelectable` is true. This provider now sets that flag. `toolCalling` stays false, so Agent mode and inline chat v2 still omit the model. Ask mode does not apply that filter.
+- Pi models were listed by the language-model provider but omitted from the chat model selector on VS Code 1.109, which keeps a model only when `isUserSelectable` is true. This provider now sets that flag. `toolCalling` stays false.
+- On VS Code 1.144.1 (commit `261c84cb`) that flag is not enough. A non-local session that has its own models shows only models with a matching `targetChatSessionType`, which this provider does not set. Agent mode on a local session still requires `toolCalling`. There is no stable API that satisfies either rule without advertising host tool calls or pinning the model to one harness.
 
 ## [0.3.1] - 2026-11-11
 

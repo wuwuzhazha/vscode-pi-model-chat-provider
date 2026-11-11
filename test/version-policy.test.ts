@@ -45,15 +45,30 @@ test('host tool capability is false and required mode fails visibly', () => {
     assert.throws(() => decideHostTools(2, 1), /toolMode Required/);
 });
 
-test('VS Code 1.109 picker: selectable and Ask shows the model; Agent and omitted selectable do not', () => {
-    const base = { toolCalling: false, edits2Enabled: false, inlineChatV2: false } as const;
-    assert.equal(visibleInChatModelPicker({ ...base, isUserSelectable: true, mode: 'ask' }), true);
-    assert.equal(visibleInChatModelPicker({ ...base, isUserSelectable: undefined, mode: 'ask' }), false);
-    assert.equal(visibleInChatModelPicker({ ...base, isUserSelectable: true, mode: 'agent' }), false);
-    assert.equal(visibleInChatModelPicker({ ...base, isUserSelectable: true, mode: 'edit', edits2Enabled: false }), true);
-    assert.equal(visibleInChatModelPicker({ ...base, isUserSelectable: true, mode: 'edit', edits2Enabled: true }), false);
-    assert.equal(visibleInChatModelPicker({ ...base, isUserSelectable: true, mode: 'ask', inlineChatV2: true }), false);
-    assert.equal(visibleInChatModelPicker({ ...base, toolCalling: true, isUserSelectable: true, mode: 'agent' }), true);
+test('VS Code 1.144.1 picker: Local Ask shows Pi; Agent and a foreign session pool do not', () => {
+    const pi = {
+        isUserSelectable: true as boolean | undefined,
+        toolCalling: false,
+        edits2Enabled: false,
+        inlineChatV2: false,
+        sessionHasOwnModelPool: false,
+    };
+    assert.equal(visibleInChatModelPicker({ ...pi, mode: 'ask', sessionType: 'local' }), true);
+    assert.equal(visibleInChatModelPicker({ ...pi, mode: 'ask', sessionType: undefined }), true);
+    assert.equal(visibleInChatModelPicker({ ...pi, mode: 'agent', sessionType: 'local' }), false);
+    assert.equal(visibleInChatModelPicker({
+        ...pi,
+        mode: 'ask',
+        sessionType: 'agent-host-copilotcli',
+        sessionHasOwnModelPool: true,
+    }), false);
+    assert.equal(visibleInChatModelPicker({ ...pi, isUserSelectable: false, mode: 'ask', sessionType: 'local' }), false);
+    assert.equal(visibleInChatModelPicker({
+        ...pi,
+        mode: 'agent',
+        toolCalling: true,
+        sessionType: 'local',
+    }), true);
 });
 
 test('closing a dialog is cancelled and is distinct from deny', () => {

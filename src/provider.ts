@@ -146,8 +146,9 @@ export class PiChatProvider implements vscode.LanguageModelChatProvider {
         const id = `${model.provider}:${model.id}`;
         this.modelProviders.set(id, model.provider);
         const family = model.id.split('-').slice(0, -1).join('-') || model.id;
-        // VS Code 1.109 reads isUserSelectable even though the 1.109 typings omit it.
-        // Undefined is treated as hidden in the chat model selector.
+        // 1.109 hid models unless this was true. 1.144.1 treats omission as visible
+        // (`!== false`) but still drops the model from non-local session pools and
+        // from Agent mode while toolCalling is false.
         const info: vscode.LanguageModelChatInformation & { isUserSelectable: true } = {
             id,
             name: `pi /${model.provider}/${model.id}`,

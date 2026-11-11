@@ -45,16 +45,15 @@ export function modelCapabilities(): { readonly toolCalling: false; readonly ima
 }
 
 /**
- * Chat-picker eligibility copied from VS Code 1.109.
- * Not a live editor test.
+ * Chat-picker eligibility for VS Code 1.144.1 (commit 261c84cb).
+ * This is a transcription of that source, not a live editor test.
  *
- * Sources:
- * - getModels and modelSupportedForDefaultAgent:
- *   src/vs/workbench/contrib/chat/browser/widget/input/chatInputPart.ts
- * - suitableForAgentMode:
- *   src/vs/workbench/contrib/chat/common/languageModels.ts
- * - agentMode is set from toolCalling:
- *   src/vs/workbench/api/common/extHostLanguageModels.ts
+ * `filterModelsForSession` in
+ * src/vs/workbench/contrib/chat/browser/widget/input/chatInputModelUtils.ts
+ * and `suitableForAgentMode` in
+ * src/vs/workbench/contrib/chat/common/languageModels.ts.
+ * The extension host sets `agentMode` from `toolCalling` in
+ * src/vs/workbench/api/common/extHostLanguageModels.ts.
  */
 export type ChatPickerMode = 'ask' | 'edit' | 'agent';
 
@@ -64,16 +63,24 @@ export function visibleInChatModelPicker(options: {
     readonly mode: ChatPickerMode;
     readonly edits2Enabled: boolean;
     readonly inlineChatV2: boolean;
+    /** Undefined or `local` uses the general pool. Any other type with its own models does not. */
+    readonly sessionType?: string;
+    readonly sessionHasOwnModelPool: boolean;
+    readonly targetChatSessionType?: string;
 }): boolean {
-    if (!options.isUserSelectable) {
+    if (options.isUserSelectable === false) {
         return false;
     }
-    const agentMode = options.toolCalling;
-    const suitableForAgent = (agentMode || false) && options.toolCalling;
-    if (options.mode === 'agent' || (options.mode === 'edit' && options.edits2Enabled)) {
-        if (!suitableForAgent) {
-            return false;
-        }
+    const sessionType = options.sessionType;
+    if (sessionType && sessionType !== 'local' && options.sessionHasOwnModelPool) {
+        return options.targetChatSessionType === sessionType;
+    }
+    if (options.targetChatSessionType) {
+        return false;
+    }
+    const agentFiltered = options.mode === 'agent' || (options.mode === 'edit' && options.edits2Enabled);
+    if (agentFiltered && !options.toolCalling) {
+        return false;
     }
     if (options.inlineChatV2 && !options.toolCalling) {
         return false;
