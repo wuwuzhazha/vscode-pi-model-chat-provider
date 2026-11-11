@@ -10,7 +10,7 @@ import {
     MIN_PI_VERSION,
     parseSemver,
 } from '../src/protocol/version.js';
-import { decideHostTools, modelCapabilities } from '../src/tool-policy.js';
+import { decideHostTools, modelCapabilities, visibleInChatModelPicker } from '../src/tool-policy.js';
 import { dialogToResponse, mapConfirmChoice, mapValueChoice } from '../src/ui-protocol.js';
 import { resolveSessionDirectory, resolveWorkingDirectory } from '../src/workspace-policy.js';
 import { applyAgentEvent, createStreamState } from '../src/render.js';
@@ -43,6 +43,17 @@ test('host tool capability is false and required mode fails visibly', () => {
     assert.equal(decideHostTools(1, 0).notice, undefined);
     assert.match(decideHostTools(1, 2).notice ?? '', /does not call them/);
     assert.throws(() => decideHostTools(2, 1), /toolMode Required/);
+});
+
+test('VS Code 1.109 picker: selectable and Ask shows the model; Agent and omitted selectable do not', () => {
+    const base = { toolCalling: false, edits2Enabled: false, inlineChatV2: false } as const;
+    assert.equal(visibleInChatModelPicker({ ...base, isUserSelectable: true, mode: 'ask' }), true);
+    assert.equal(visibleInChatModelPicker({ ...base, isUserSelectable: undefined, mode: 'ask' }), false);
+    assert.equal(visibleInChatModelPicker({ ...base, isUserSelectable: true, mode: 'agent' }), false);
+    assert.equal(visibleInChatModelPicker({ ...base, isUserSelectable: true, mode: 'edit', edits2Enabled: false }), true);
+    assert.equal(visibleInChatModelPicker({ ...base, isUserSelectable: true, mode: 'edit', edits2Enabled: true }), false);
+    assert.equal(visibleInChatModelPicker({ ...base, isUserSelectable: true, mode: 'ask', inlineChatV2: true }), false);
+    assert.equal(visibleInChatModelPicker({ ...base, toolCalling: true, isUserSelectable: true, mode: 'agent' }), true);
 });
 
 test('closing a dialog is cancelled and is distinct from deny', () => {

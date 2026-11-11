@@ -4,6 +4,11 @@ All notable changes to the "vscode-pi-model-chat-provider" extension will be doc
 
 This line and the entries below 0.3.0 describe the original tintinweb extension. 0.3.0 is the first release of the [wuwuzhazha fork](https://github.com/wuwuzhazha/vscode-pi-model-chat-provider). The license remains MIT. Copyright for the original work remains tintinweb.
 
+## [0.3.2] - 2026-11-11
+
+### Fixed
+- Pi models were listed by the language-model provider but omitted from the chat model selector. VS Code 1.109 keeps a model in that selector only when `isUserSelectable` is true. This provider now sets that flag. `toolCalling` stays false, so Agent mode and inline chat v2 still omit the model. Ask mode does not apply that filter.
+
 ## [0.3.1] - 2026-11-11
 
 ### Fixed

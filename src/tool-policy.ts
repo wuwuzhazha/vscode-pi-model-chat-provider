@@ -9,7 +9,7 @@ export const HOST_TOOL_NOTICE =
     'Pi may still run its own bash, read, and edit tools inside the Pi process. ' +
     'A VS Code tool approval does not approve Pi tools, and Allow on a Pi dialog does not approve VS Code tools.';
 
-export const MODEL_DETAIL = 'Pi runs its own tools inside Pi. Not a VS Code agent-tool model.';
+export const MODEL_DETAIL = 'Pi runs its own tools. Eligible in Ask. Hidden in Agent mode because host tool calling is off.';
 
 export const MODEL_TOOLTIP =
     'Pi Coding Agent through the language model provider API. ' +
@@ -42,4 +42,41 @@ export function decideHostTools(toolMode: number | undefined, toolCount: number)
 /** Capabilities reported to VS Code. toolCalling false means this is not an agent-mode model. */
 export function modelCapabilities(): { readonly toolCalling: false; readonly imageInput: true } {
     return { toolCalling: false, imageInput: true };
+}
+
+/**
+ * Chat-picker eligibility copied from VS Code 1.109.
+ * Not a live editor test.
+ *
+ * Sources:
+ * - getModels and modelSupportedForDefaultAgent:
+ *   src/vs/workbench/contrib/chat/browser/widget/input/chatInputPart.ts
+ * - suitableForAgentMode:
+ *   src/vs/workbench/contrib/chat/common/languageModels.ts
+ * - agentMode is set from toolCalling:
+ *   src/vs/workbench/api/common/extHostLanguageModels.ts
+ */
+export type ChatPickerMode = 'ask' | 'edit' | 'agent';
+
+export function visibleInChatModelPicker(options: {
+    readonly isUserSelectable: boolean | undefined;
+    readonly toolCalling: boolean;
+    readonly mode: ChatPickerMode;
+    readonly edits2Enabled: boolean;
+    readonly inlineChatV2: boolean;
+}): boolean {
+    if (!options.isUserSelectable) {
+        return false;
+    }
+    const agentMode = options.toolCalling;
+    const suitableForAgent = (agentMode || false) && options.toolCalling;
+    if (options.mode === 'agent' || (options.mode === 'edit' && options.edits2Enabled)) {
+        if (!suitableForAgent) {
+            return false;
+        }
+    }
+    if (options.inlineChatV2 && !options.toolCalling) {
+        return false;
+    }
+    return true;
 }
