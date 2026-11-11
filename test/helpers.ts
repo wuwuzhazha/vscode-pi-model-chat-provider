@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, writeFile } from 'node:fs/promises';
+import { chmod, copyFile, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -53,7 +53,30 @@ export async function makeWorkspace(): Promise<string> {
     return mkdtemp(path.join(tmpdir(), 'pi-provider-'));
 }
 
+const WINDOWS_NPM_SHIM = `@ECHO off
+SETLOCAL
+SET "dp0=%~dp0"
+IF EXIST "%dp0%\\node.exe" (
+  SET "_prog=%dp0%\\node.exe"
+) ELSE (
+  SET "_prog=node"
+)
+"%_prog%" "%dp0%\\node_modules\\@earendil-works\\pi-coding-agent\\dist\\bundle\\cli.js" %*
+`;
+
 export async function installMockBinary(dir: string): Promise<string> {
+    if (process.platform === 'win32') {
+        // Actual Windows launch of the mock through the same npm-shim resolver
+        // the extension uses. Linux keeps a direct shebang script.
+        const bundle = path.join(dir, 'node_modules', '@earendil-works', 'pi-coding-agent', 'dist', 'bundle');
+        await mkdir(bundle, { recursive: true });
+        await writeFile(path.join(bundle, 'package.json'), '{"type":"module"}\n', 'utf8');
+        await writeFile(path.join(bundle, 'cli.js'), await readFile(mockPi));
+        await copyFile(process.execPath, path.join(dir, 'node.exe'));
+        const cmd = path.join(dir, 'pi.cmd');
+        await writeFile(cmd, WINDOWS_NPM_SHIM, 'utf8');
+        return cmd;
+    }
     const binary = path.join(dir, 'pi');
     await writeFile(binary, `#!/bin/sh\nexec "${process.execPath}" "${mockPi}" "$@"\n`, 'utf8');
     await chmod(binary, 0o755);

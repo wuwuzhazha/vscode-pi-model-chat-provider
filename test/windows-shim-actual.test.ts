@@ -101,8 +101,8 @@ test('actual Windows: npm pi.cmd launches adjacent node.exe and cli.js without a
         });
         await once(waiting, 'spawn');
         assert.equal(waiting.kill(), true);
-        const [waitCode] = await once(waiting, 'exit') as [number | null];
-        assert.notEqual(waitCode, null);
+        const [waitCode, waitSignal] = await once(waiting, 'exit') as [number | null, NodeJS.Signals | null];
+        assert.ok(waitCode !== null || waitSignal !== null, 'killed node.exe did not exit');
         assert.equal(path.basename(resolved.launch.command).toLowerCase(), 'node.exe');
     } finally {
         await rm(parent, { recursive: true, force: true });

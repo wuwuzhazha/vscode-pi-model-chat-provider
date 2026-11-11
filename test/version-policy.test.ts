@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import * as path from 'node:path';
 import test from 'node:test';
 import { parseRegisteredModelId, stripVendorPrefix } from '../src/model-id.js';
 import {
@@ -95,7 +96,7 @@ test('session directory stays inside the workspace unless persistence is off', (
         persist: true,
         configuredDir: '',
         workspaceFolders: ['/work/app'],
-    }), '/work/app/.pi/vscode-lm-sessions');
+    }), path.join('/work/app', '.pi', 'vscode-lm-sessions'));
     assert.throws(() => resolveSessionDirectory({
         persist: true,
         configuredDir: '/tmp/outside',
