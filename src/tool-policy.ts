@@ -46,9 +46,11 @@ export function modelCapabilities(): { readonly toolCalling: false; readonly ima
 
 /**
  * Chat-picker eligibility transcribed from VS Code 1.144.1 (commit 261c84cb).
- * This is not a live editor test. A Local + Ask window on that build still
- * omitted Pi, so a true result here is not evidence the picker shows the model.
- * The helper also does not know the open chat's real session resource.
+ * `mode: 'ask'` is `ChatModeKind.Ask`. The mode button labeled Ask on that
+ * build is normally the Copilot custom agent, whose omitted `kind` becomes
+ * `ChatModeKind.Agent` (`chatModes.ts`). That path is `mode: 'agent'` here.
+ * A Linux run of 1.144.1 showed the labeled Ask picker with no Pi row while
+ * `selectChatModels` still returned the models.
  *
  * `filterModelsForSession` in
  * src/vs/workbench/contrib/chat/browser/widget/input/chatInputModelUtils.ts

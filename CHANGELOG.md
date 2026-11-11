@@ -11,7 +11,7 @@ This line and the entries below 0.3.0 describe the original tintinweb extension.
 - The report states the limits of that API: no read-back of `isUserSelectable` or `targetChatSessionType`, no access to profile storage `chatModelVisibility`, and no access to the open chat's session resource, mode, or location.
 
 ### Changed
-- Model detail no longer says the model is eligible in Ask. On VS Code 1.144.1 a Local + Ask window still did not list Pi, and this repository has not executed that picker.
+- Model detail no longer says the model is eligible in Ask. On VS Code 1.144.1 the mode button labeled Ask is a custom agent whose kind defaults to Agent, and the model picker then requires `toolCalling`. A Linux run of that build showed Local plus that Ask button with the Pi models registered and absent from the picker. `toolCalling` stays false.
 
 ## [0.3.2] - 2026-11-11
 
